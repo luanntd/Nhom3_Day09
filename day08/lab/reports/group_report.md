@@ -1,145 +1,100 @@
 # Báo Cáo Nhóm — Lab Day 08: Full RAG Pipeline
 
-**Tên nhóm:** ___________  
+**Tên nhóm:** Day08-RAG-Team  
 **Thành viên:**
 | Tên | Vai trò | Email |
 |-----|---------|-------|
-| ___ | Tech Lead | ___ |
-| ___ | Retrieval Owner | ___ |
-| ___ | Eval Owner | ___ |
-| ___ | Documentation Owner | ___ |
+| Vũ Hoàng Minh | Tech Lead + Retrieval Owner |  |
+| Thái Tuấn Khang | Eval Owner + Retrieval Owner |  |
+| Nguyễn Thành Luân | Documentation Owner + Retrieval Owner |  |
 
-**Ngày nộp:** ___________  
-**Repo:** ___________  
+**Ngày nộp:** 2026-04-13  
+**Repo:** 2A202600204_NguyenThanhLuan_Day08
 **Độ dài khuyến nghị:** 600–900 từ
 
 ---
 
-> **Hướng dẫn nộp group report:**
->
-> - File này nộp tại: `reports/group_report.md`
-> - Deadline: Được phép commit **sau 18:00** (xem SCORING.md)
-> - Tập trung vào **quyết định kỹ thuật cấp nhóm** — không trùng lặp với individual reports
-> - Phải có **bằng chứng từ code, scorecard, hoặc tuning log** — không mô tả chung chung
-
----
-
-## 1. Pipeline nhóm đã xây dựng (150–200 từ)
-
-> Mô tả ngắn gọn pipeline của nhóm:
-> - Chunking strategy: size, overlap, phương pháp tách (by paragraph, by section, v.v.)
-> - Embedding model đã dùng
-> - Retrieval mode: dense / hybrid / rerank (Sprint 3 variant)
+## 1. Pipeline nhóm đã xây dựng
 
 **Chunking decision:**
-> VD: "Nhóm dùng chunk_size=500, overlap=50, tách theo section headers vì tài liệu có cấu trúc rõ ràng."
-
-_________________
+> Nhóm dùng chunk_size=400 tokens và overlap=80 tokens. Chiến lược cắt theo section heading trước, sau đó mới cắt theo độ dài để tránh mất nghĩa giữa các điều khoản policy/SLA.
 
 **Embedding model:**
-
-_________________
+> OpenAI text-embedding-3-small, lưu vector vào ChromaDB (cosine similarity).
 
 **Retrieval variant (Sprint 3):**
-> Nêu rõ variant đã chọn (hybrid / rerank / query transform) và lý do ngắn gọn.
-
-_________________
+> Variant đã chọn là hybrid retrieval (dense + BM25 + RRF), với giả thuyết ban đầu rằng query có alias/keyword như Approval Matrix, ERR-code sẽ được cải thiện nhờ sparse matching.
 
 ---
 
-## 2. Quyết định kỹ thuật quan trọng nhất (200–250 từ)
+## 2. Quyết định kỹ thuật quan trọng nhất
 
-> Chọn **1 quyết định thiết kế** mà nhóm thảo luận và đánh đổi nhiều nhất trong lab.
-> Phải có: (a) vấn đề gặp phải, (b) các phương án cân nhắc, (c) lý do chọn.
-
-**Quyết định:** ___________________
+**Quyết định:** Dùng LLM-as-Judge có rubric rõ và hậu xử lý abstain cho câu thiếu ngữ cảnh
 
 **Bối cảnh vấn đề:**
-
-_________________
+Pipeline ban đầu dùng heuristic/fallback chấm điểm nên một số câu dạng abstain đúng (đặc biệt q09 và gq07) vẫn bị chấm thấp, làm sai lệch đánh giá chất lượng thật. Điều này ảnh hưởng trực tiếp Sprint 4 vì scorecard và tuning-log sẽ không phản ánh đúng hành vi anti-hallucination mà lab yêu cầu.
 
 **Các phương án đã cân nhắc:**
 
 | Phương án | Ưu điểm | Nhược điểm |
 |-----------|---------|-----------|
-| ___ | ___ | ___ |
-| ___ | ___ | ___ |
+| Heuristic scoring | Nhanh, không tốn thêm API call | Không bám ngữ nghĩa tốt, dễ chấm sai abstain |
+| LLM-as-Judge có rubric JSON | Linh hoạt theo ngữ cảnh, giải thích được notes | Tốn API và cần parse ổn định |
 
 **Phương án đã chọn và lý do:**
-
-_________________
+Nhóm chọn LLM-as-Judge và bổ sung 3 lớp ổn định: bắt output JSON mode, normalize score về 1-5, retry khi parse lỗi. Ngoài ra thêm rule hậu xử lý cho câu không có expected sources: nếu answer abstain rõ ràng thì reward theo anti-hallucination.
 
 **Bằng chứng từ scorecard/tuning-log:**
-
-_________________
-
----
-
-## 3. Kết quả grading questions (100–150 từ)
-
-> Sau khi chạy pipeline với grading_questions.json (public lúc 17:00):
-> - Câu nào pipeline xử lý tốt nhất? Tại sao?
-> - Câu nào pipeline fail? Root cause ở đâu (indexing / retrieval / generation)?
-> - Câu gq07 (abstain) — pipeline xử lý thế nào?
-
-**Ước tính điểm raw:** ___ / 98
-
-**Câu tốt nhất:** ID: ___ — Lý do: ___________________
-
-**Câu fail:** ID: ___ — Root cause: ___________________
-
-**Câu gq07 (abstain):** ___________________
+Baseline sau khi chuẩn hóa judge đạt Faithfulness 4.80, Relevance 4.90, Context Recall 5.00, Completeness 4.10.
 
 ---
 
-## 4. A/B Comparison — Baseline vs Variant (150–200 từ)
+## 3. Kết quả grading questions
 
-> Dựa vào `docs/tuning-log.md`. Tóm tắt kết quả A/B thực tế của nhóm.
+**Ước tính điểm raw:** Chưa chấm tay theo từng criterion, nhưng log đủ 10 câu để giảng viên chấm /98
 
-**Biến đã thay đổi (chỉ 1 biến):** ___________________
+**Câu tốt nhất:** ID: gq06 — Lý do: tổng hợp đúng quy trình cấp quyền tạm thời trong incident, có nguồn từ nhiều tài liệu liên quan.
+
+**Câu fail:** ID: gq08 — Root cause: answer còn thiên về mô tả tổng quát, có nguy cơ thiếu độ sắc nét về phân biệt policy trong ngữ cảnh 3 ngày.
+
+**Câu gq07 (abstain):** Pipeline trả lời Không đủ dữ liệu về vấn đề này, phù hợp quy tắc anti-hallucination trong SCORING.
+
+---
+
+## 4. A/B Comparison — Baseline vs Variant
+
+**Biến đã thay đổi (chỉ 1 biến):** retrieval_mode (dense -> hybrid)
 
 | Metric | Baseline | Variant | Delta |
 |--------|---------|---------|-------|
-| ___ | ___ | ___ | ___ |
-| ___ | ___ | ___ | ___ |
+| Faithfulness | 4.80/5 | 4.70/5 | -0.10 |
+| Relevance | 4.90/5 | 4.70/5 | -0.20 |
+| Context Recall | 5.00/5 | 5.00/5 | +0.00 |
+| Completeness | 4.10/5 | 3.90/5 | -0.20 |
 
 **Kết luận:**
-> Variant tốt hơn hay kém hơn? Ở điểm nào?
-
-_________________
+Variant hybrid kém hơn baseline trên bộ test hiện tại. Điểm giảm rõ nhất ở relevance và completeness, đặc biệt q07 chưa cải thiện như kỳ vọng. Vì vậy nhóm quyết định dùng baseline dense làm cấu hình chính để chạy grading_questions.
 
 ---
 
-## 5. Phân công và đánh giá nhóm (100–150 từ)
-
-> Đánh giá trung thực về quá trình làm việc nhóm.
+## 5. Phân công và đánh giá nhóm
 
 **Phân công thực tế:**
 
 | Thành viên | Phần đã làm | Sprint |
 |------------|-------------|--------|
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
-| ___ | ___________________ | ___ |
+| Vũ Hoàng Minh | Lead kỹ thuật, kiểm tra indexing/chunking, triển khai và thử nghiệm hybrid retrieval | 1, 3 |
+| Thái Tuấn Khang | Dense retrieval baseline, chạy evaluation baseline/variant, rà soát grading log | 2, 4 |
+| Nguyễn Thành Luân | Hoàn thiện architecture.md, tuning-log.md, tổng hợp A/B và viết group report | 4 |
 
 **Điều nhóm làm tốt:**
-
-_________________
+Pipeline chạy end-to-end ổn định, artifacts đầy đủ (scorecard, log grading, docs). Nhóm bám A/B rule nghiêm túc, có bằng chứng định lượng trước khi kết luận.
 
 **Điều nhóm làm chưa tốt:**
-
-_________________
-
----
-
-## 6. Nếu có thêm 1 ngày, nhóm sẽ làm gì? (50–100 từ)
-
-> 1–2 cải tiến cụ thể với lý do có bằng chứng từ scorecard.
-
-_________________
+Chưa kịp thử Variant 2 thật sự bằng một lần chạy độc lập có số liệu riêng. Một số câu alias vẫn cần thêm query transform để tăng completeness.
 
 ---
 
-*File này lưu tại: `reports/group_report.md`*  
-*Commit sau 18:00 được phép theo SCORING.md*
+## 6. Nếu có thêm 1 ngày, nhóm sẽ làm gì?
+
+Nhóm sẽ ưu tiên query expansion theo alias map trước retrieval (ví dụ Approval Matrix -> Access Control SOP), sau đó thử rerank cross-encoder cho top-10 -> top-3 để giảm nhiễu. Mỗi lần chỉ đổi một biến và đo lại trên cùng bộ test để giữ tính so sánh. Mục tiêu là tăng completeness ở q07/q10 mà không làm giảm faithfulness.

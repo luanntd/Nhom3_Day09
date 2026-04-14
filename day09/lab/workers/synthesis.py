@@ -17,6 +17,9 @@ Gọi độc lập để test:
 """
 
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 WORKER_NAME = "synthesis_worker"
 
@@ -36,33 +39,19 @@ def _call_llm(messages: list) -> str:
     Gọi LLM để tổng hợp câu trả lời.
     TODO Sprint 2: Implement với OpenAI hoặc Gemini.
     """
-    # Option A: OpenAI
+    # Dùng OpenAI API theo yêu cầu
     try:
         from openai import OpenAI
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=messages,
-            temperature=0.1,  # Low temperature để grounded
-            max_tokens=500,
+            temperature=0.1,  
+            max_tokens=600,
         )
         return response.choices[0].message.content
-    except Exception:
-        pass
-
-    # Option B: Gemini
-    try:
-        import google.generativeai as genai
-        genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        combined = "\n".join([m["content"] for m in messages])
-        response = model.generate_content(combined)
-        return response.text
-    except Exception:
-        pass
-
-    # Fallback: trả về message báo lỗi (không hallucinate)
-    return "[SYNTHESIS ERROR] Không thể gọi LLM. Kiểm tra API key trong .env."
+    except Exception as e:
+        return f"[SYNTHESIS ERROR] Lỗi khi gọi OpenAI API: {str(e)}"
 
 
 def _build_context(chunks: list, policy_result: dict) -> str:
@@ -100,19 +89,20 @@ def _estimate_confidence(chunks: list, answer: str, policy_result: dict) -> floa
     if not chunks:
         return 0.1  # Không có evidence → low confidence
 
-    if "Không đủ thông tin" in answer or "không có trong tài liệu" in answer.lower():
+    answer_lower = answer.lower()
+    if "không đủ thông tin" in answer_lower or "không có trong tài liệu" in answer_lower or "không có thông tin" in answer_lower:
         return 0.3  # Abstain → moderate-low
 
+    # Thưởng (bonus) nếu có citation đúng [source]
+    citation_bonus = 0.05 if any(f"[{c.get('source', '')}]" in answer for c in chunks) else 0.0
+
     # Weighted average của chunk scores
-    if chunks:
-        avg_score = sum(c.get("score", 0) for c in chunks) / len(chunks)
-    else:
-        avg_score = 0
+    avg_score = sum(c.get("score", 0) for c in chunks) / len(chunks)
 
     # Penalty nếu có exceptions (phức tạp hơn)
     exception_penalty = 0.05 * len(policy_result.get("exceptions_found", []))
 
-    confidence = min(0.95, avg_score - exception_penalty)
+    confidence = min(0.95, avg_score - exception_penalty + citation_bonus)
     return round(max(0.1, confidence), 2)
 
 

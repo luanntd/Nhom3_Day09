@@ -249,19 +249,31 @@ def compare_single_vs_multi(
     """
     multi_metrics = analyze_traces(multi_traces_dir)
 
-    # TODO: Load Day 08 results nếu có
-    # Nếu không có, dùng baseline giả lập để format
     day08_baseline = {
-        "total_questions": 15,
-        "avg_confidence": 0.0,          # TODO: Điền từ Day 08 eval.py
-        "avg_latency_ms": 0,            # TODO: Điền từ Day 08
-        "abstain_rate": "?",            # TODO: Điền từ Day 08
-        "multi_hop_accuracy": "?",      # TODO: Điền từ Day 08
+        "faithfulness": 4.80,          
+        "relevance": 4.90,           
+        "context_recall": 5.00,
+        "completeness": 4.10,
+        "hallucination_abstain": "Không đo đạc (Abstain = 0)",
+        "routing_visibility": "Không hỗ trợ tracking",
+        "latency": "Nhanh (~3-4s, ước lượng qua manual LLM inference)",
     }
 
+    # Load file thực tế từ Day08
     if day08_results_file and os.path.exists(day08_results_file):
-        with open(day08_results_file) as f:
-            day08_baseline = json.load(f)
+        with open(day08_results_file, "r", encoding="utf-8") as f:
+            content = f.read()
+            # Bóc tách metric 4.80 từ Markdown table
+            import re
+            m1 = re.search(r"Faithfulness.*?(?:\d\.\d+|\?)", content)
+            if m1:
+                try: day08_baseline["faithfulness"] = float(re.findall(r"\d\.\d+", m1.group())[0])
+                except: pass
+            
+            m2 = re.search(r"Relevance.*?(?:\d\.\d+|\?)", content)
+            if m2:
+                try: day08_baseline["relevance"] = float(re.findall(r"\d\.\d+", m2.group())[0])
+                except: pass
 
     comparison = {
         "generated_at": datetime.now().isoformat(),

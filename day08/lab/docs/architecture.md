@@ -6,11 +6,11 @@
 ## 1. Tổng quan kiến trúc
 
 ```
-[Raw Docs]
+[Raw Docs (5 files .txt)]
     ↓
 [index.py: Preprocess → Chunk → Embed → Store]
     ↓
-[ChromaDB Vector Store]
+[ChromaDB Vector Store (29 chunks)]
     ↓
 [rag_answer.py: Query → Retrieve → Rerank → Generate]
     ↓
@@ -18,7 +18,7 @@
 ```
 
 **Mô tả ngắn gọn:**
-> TODO: Mô tả hệ thống trong 2-3 câu. Nhóm xây gì? Cho ai dùng? Giải quyết vấn đề gì?
+> Hệ thống trợ lý nội bộ cho khối CS + IT Helpdesk, trả lời câu hỏi về chính sách, SLA ticket, quy trình cấp quyền và FAQ bằng chứng cứ retrieve có kiểm soát. Pipeline sử dụng ChromaDB vector store, OpenAI embedding (`text-embedding-3-small`) và OpenAI chat model (`gpt-4o-mini`) để tạo câu trả lời grounded kèm citation.
 
 ---
 
@@ -27,23 +27,23 @@
 ### Tài liệu được index
 | File | Nguồn | Department | Số chunk |
 |------|-------|-----------|---------|
-| `policy_refund_v4.txt` | policy/refund-v4.pdf | CS | TODO |
-| `sla_p1_2026.txt` | support/sla-p1-2026.pdf | IT | TODO |
-| `access_control_sop.txt` | it/access-control-sop.md | IT Security | TODO |
-| `it_helpdesk_faq.txt` | support/helpdesk-faq.md | IT | TODO |
-| `hr_leave_policy.txt` | hr/leave-policy-2026.pdf | HR | TODO |
+| `policy_refund_v4.txt` | policy/refund-v4.pdf | CS | 6 |
+| `sla_p1_2026.txt` | support/sla-p1-2026.pdf | IT | 5 |
+| `access_control_sop.txt` | it/access-control-sop.md | IT Security | 7 |
+| `it_helpdesk_faq.txt` | support/helpdesk-faq.md | IT | 6 |
+| `hr_leave_policy.txt` | hr/leave-policy-2026.pdf | HR | 5 |
 
 ### Quyết định chunking
 | Tham số | Giá trị | Lý do |
 |---------|---------|-------|
-| Chunk size | TODO tokens | TODO |
-| Overlap | TODO tokens | TODO |
-| Chunking strategy | Heading-based / paragraph-based | TODO |
-| Metadata fields | source, section, effective_date, department, access | Phục vụ filter, freshness, citation |
+| Chunk size | 400 tokens (~1600 ký tự) | Cân bằng giữa context và precision, tránh chunk quá dài |
+| Overlap | 80 tokens (~320 ký tự) | Đảm bảo continuity giữa chunks, tránh mất thông tin ở biên |
+| Chunking strategy | Heading-based + paragraph-based | Ưu tiên cắt tại section heading (===), sau đó paragraph để giữ cấu trúc tự nhiên |
+| Metadata fields | source, section, effective_date, department, access | Phục vụ filter theo department, freshness check, access control, và citation |
 
 ### Embedding model
-- **Model**: TODO (OpenAI text-embedding-3-small / paraphrase-multilingual-MiniLM-L12-v2)
-- **Vector store**: ChromaDB (PersistentClient)
+- **Model**: text-embedding-3-small (OpenAI Embeddings API)
+- **Vector store**: ChromaDB (PersistentClient, cosine similarity)
 - **Similarity metric**: Cosine
 
 ---
@@ -61,15 +61,14 @@
 ### Variant (Sprint 3)
 | Tham số | Giá trị | Thay đổi so với baseline |
 |---------|---------|------------------------|
-| Strategy | TODO (hybrid / dense) | TODO |
-| Top-k search | TODO | TODO |
-| Top-k select | TODO | TODO |
-| Rerank | TODO (cross-encoder / MMR) | TODO |
-| Query transform | TODO (expansion / HyDE / decomposition) | TODO |
+| Strategy | Hybrid (dense + sparse với RRF) | Thêm BM25 sparse retrieval kết hợp với dense |
+| Top-k search | 10 | Giữ nguyên |
+| Top-k select | 3 | Giữ nguyên |
+| Rerank | Không | Giữ nguyên |
+| Query transform | Không | Giữ nguyên |
 
 **Lý do chọn variant này:**
-> TODO: Giải thích tại sao chọn biến này để tune.
-> Ví dụ: "Chọn hybrid vì corpus có cả câu tự nhiên (policy) lẫn mã lỗi và tên chuyên ngành (SLA ticket P1, ERR-403)."
+> Chọn hybrid vì corpus có cả văn bản chính sách tự nhiên (policy, FAQ) và nhiều keyword/alias quan trọng (P1, refund, Level 3, ERR-403). Dense retrieval tốt với ngữ nghĩa nhưng có thể bỏ lỡ exact term; sparse BM25 bổ sung khả năng tìm keyword chính xác, kết hợp bằng Reciprocal Rank Fusion để cân bằng cả hai.
 
 ---
 
@@ -77,10 +76,14 @@
 
 ### Grounded Prompt Template
 ```
-Answer only from the retrieved context below.
-If the context is insufficient, say you do not know.
-Cite the source field when possible.
-Keep your answer short, clear, and factual.
+You are a helpful assistant that answers questions based on the provided context.
+IMPORTANT RULES:
+1) Do NOT use external knowledge or make guesses.
+2) If specific information is missing, answer "Tôi không biết" or "Không đủ dữ liệu về vấn đề này."
+3) If context is related but not exact, state what context says.
+4) Add citations [1], [2], ... when possible.
+5) Keep answer short (2-4 sentences), clear, factual.
+6) Respond in the same language as the question.
 
 Question: {query}
 
@@ -96,7 +99,7 @@ Answer:
 ### LLM Configuration
 | Tham số | Giá trị |
 |---------|---------|
-| Model | TODO (gpt-4o-mini / gemini-1.5-flash) |
+| Model | gpt-4o-mini (OpenAI) |
 | Temperature | 0 (để output ổn định cho eval) |
 | Max tokens | 512 |
 
@@ -116,21 +119,19 @@ Answer:
 
 ---
 
-## 6. Diagram (tùy chọn)
-
-> TODO: Vẽ sơ đồ pipeline nếu có thời gian. Có thể dùng Mermaid hoặc drawio.
+## 6. Diagram
 
 ```mermaid
 graph LR
-    A[User Query] --> B[Query Embedding]
-    B --> C[ChromaDB Vector Search]
+    A[User Query] --> B[OpenAI Embedding<br/>text-embedding-3-small]
+    B --> C[ChromaDB Vector Search<br/>Cosine Similarity]
     C --> D[Top-10 Candidates]
-    D --> E{Rerank?}
-    E -->|Yes| F[Cross-Encoder]
-    E -->|No| G[Top-3 Select]
+    D --> E{Mode}
+    E -->|Dense| G[Top-3 Select]
+    E -->|Hybrid| F[BM25 Sparse + RRF]
     F --> G
-    G --> H[Build Context Block]
+    G --> H[Build Context Block + Citations]
     H --> I[Grounded Prompt]
-    I --> J[LLM]
-    J --> K[Answer + Citation]
+    I --> J[OpenAI GPT-4o-mini<br/>Temperature=0]
+    J --> K[Answer + Sources]
 ```
