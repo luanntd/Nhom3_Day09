@@ -1,0 +1,87 @@
+# Báo Cáo Cá Nhân — Lab Day 09: Multi-Agent Orchestration
+
+**Họ và tên:** Vũ Hoàng Minh  
+**Vai trò trong nhóm:** Worker Owner  
+**Ngày nộp:** 2026-04-14  
+
+---
+
+## 1. Tôi phụ trách phần nào? (100–150 từ)
+
+Ở kiến trúc Lab Day 09, tôi đảm nhận phát triển logic xử lý ngữ nghĩa và sinh câu trả lời: `workers/retrieval.py` và `workers/synthesis.py`. 
+Tại Retrieval, tôi triển khai code nối model "all-MiniLM-L6-v2" của Hugging Face vào Data gốc ở Vector Database Chroma. Cuối chặng, tôi xây dựng System Prompt nhúng nguồn Grounding để định hướng Model OpenAI, kèm theo công thức tự định nghĩa để tính điểm tin cậy (Confidence).
+
+**Module/file tôi chịu trách nhiệm:**
+- File chính: `workers/retrieval.py`, `workers/synthesis.py`
+- Functions tôi implement: `retrieve_dense`, `_build_context`, `_call_llm`, `_estimate_confidence`.
+
+**Cách công việc của tôi kết nối với phần của thành viên khác:**
+Output Vector Search (List các chunks) do phần tôi trả về sẽ làm dữ liệu cơ sở (Context) cho bạn Khang ở bộ phận Policy phân tích và bóc tách.
+
+**Bằng chứng:**
+Đoạn code `_call_llm` dùng OpenAI Client ở `synthesis.py` thuộc phạm vi công việc của tôi.
+
+---
+
+## 2. Tôi đã ra một quyết định kỹ thuật gì? (150–200 từ)
+
+**Quyết định:** Sử dụng công thức tính `Confidence Score` tự cấu hình tay (Heuristics) thay vì bắt OpenAI sinh ra Score.
+
+**Lý do:**
+OpenAI đôi khi thiếu ổn định trong việc tự đánh giá điểm tin cậy (scale), mô hình có thể bộc lộ mức độ tự tin cao kể cả khi thông tin không chính xác (Hallucination). Do đó tôi quyết định viết một chuỗi quy ước Penalty & Bonus thủ công. 
+
+**Trade-off đã chấp nhận:**
+Công thức heuristics khá cơ bản và chưa phản ánh được độ học máy phức tạp, nhưng nó đủ an toàn và hiệu quả đối với quy mô bài lab để phát hiện các thông tin mơ hồ.
+
+**Bằng chứng từ trace/code:**
+```python
+    # Weighted average của chunk scores
+    avg_score = sum(c.get("score", 0) for c in chunks) / len(chunks)
+
+    # Penalty nếu có exceptions (phức tạp hơn)
+    exception_penalty = 0.05 * len(policy_result.get("exceptions_found", []))
+
+    # Cấp thưởng nếu Reference Text khớp
+    confidence = min(0.95, avg_score - exception_penalty + citation_bonus)
+```
+
+---
+
+## 3. Tôi đã sửa một lỗi gì? (150–200 từ)
+
+**Lỗi:** Collection Chroma Not Found.
+
+**Symptom (pipeline làm gì sai?):**
+Lúc Code chạy Trace báo là "Collection 'day09_docs' chưa có data". Do vector data DB bên Day 08 cũ có tên Collection khác, dẫn đến Pipeline Retrieval không móc được Chunk nào và trả ra Mảng rỗng `[]`, khiến LLM báo không có tài liệu.
+
+**Root cause (lỗi nằm ở đâu — indexing, routing, contract, worker logic?):**
+Indexing Data cũ không tuân thủ I/O của Script Day 09. 
+
+**Cách sửa:**
+Tôi đã làm việc cùng Thành Luân để tạo ra file Re-index mới `build_index.py`, chủ động load Document Text, băm nhỏ Chunking, nhúng Text bằng Model Cục bộ và đẩy lên Persistent Collection chuẩn xác `day09_docs`.
+
+**Bằng chứng trước/sau:**
+Trace Log 1 (Lỗi): `⚠️  Collection 'day09_docs' chưa có data. Chạy index script trong README trước.`
+Trace Log 2 (Thành công): `BertModel LOAD REPORT from: sentence-transformers/all-MiniLM-L6-v2 ... Index ready with 77 chunks.`
+
+---
+
+## 4. Tôi tự đánh giá đóng góp của mình (100–150 từ)
+
+**Tôi làm tốt nhất ở điểm nào?**
+Kết hợp Grounded Prompt và thuật toán Heuristic tính điểm Abstain, nhờ đó hỗ trợ hệ thống cải thiện đáng kể khả năng giảm thiểu Hallucination.
+
+**Tôi làm chưa tốt hoặc còn yếu ở điểm nào?**
+Quên Caching Singleton biến đối tượng `SentenceTransformer` ở Retrieval, nên mỗi lần Eval Query thì code mất 2s load lại Params từ RAM Memory, gây ảnh hưởng Latency.
+
+**Nhóm phụ thuộc vào tôi ở đâu?** 
+File `synthesis.py` chứa lời giải cuối cùng. Dù các Nodes xung quanh chạy trơn tru đến mấy mà tôi Setup GPT Prompt lơ ngơ thì User vẫn sẽ ăn điểm Zero.
+
+**Phần tôi phụ thuộc vào thành viên khác:** 
+Tôi buộc phải chờ Thành cấp Trace Logs để có file `eval_report.json` và debug mảng Confidence của tôi xem có chặn được Null Text không.
+
+---
+
+## 5. Nếu có thêm 2 giờ, tôi sẽ làm gì? (50–100 từ)
+
+Tôi sẽ thử đổi thuật toán Vector Embeddings vì trace của câu `gq07` cho thấy retrieval lôi lên các khối text dở tệ "không liên quan". Việc áp dụng Hybrid Search (tích hợp Vector + BM25 Lexical) ở tầng Worker của tôi chắc chắn sẽ lấy chính xác Context bị khuyết thiếu!
